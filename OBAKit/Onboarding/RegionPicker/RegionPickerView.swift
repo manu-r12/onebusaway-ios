@@ -6,8 +6,8 @@
 //
 
 import MapKit
-import SwiftUI
 import OBAKitCore
+import SwiftUI
 
 public struct RegionPickerView<Provider: RegionProvider>: View, OnboardingView {
     @ObservedObject var regionProvider: Provider
@@ -59,72 +59,87 @@ public struct RegionPickerView<Provider: RegionProvider>: View, OnboardingView {
     @State var isShowingCustomRegionSheet: Bool = false
 
     public var body: some View {
-        List {
-            Toggle("Automatically select region", isOn: $regionProvider.automaticallySelectRegion)
-            Picker("", selection: $selectedRegion) {
-                ForEach(filteredRegions, id: \.self) { region in
-                    cell(for: region)
-                        .tag(Optional(region))  // The tag type must match the selection type (an *optional* Region)
+        NavigationStack {
+            List {
+                Toggle(
+                    "Automatically select region",
+                    isOn: $regionProvider.automaticallySelectRegion)
+                Picker("", selection: $selectedRegion) {
+                    ForEach(filteredRegions, id: \.self) { region in
+                        cell(for: region)
+                            .tag(Optional(region))  // The tag type must match the selection type (an *optional* Region)
+                    }
+                }
+                .disabled(regionProvider.automaticallySelectRegion)
+                .pickerStyle(.inline)
+                .labelsHidden()  // Hide picker header (title)
+            }
+            // List modifiers
+            .listSectionSeparator(.hidden)
+            .listStyle(.plain)
+            .refreshable(action: doRefreshRegions)
+            .disabled(disableInteractions)
+            .navigationDestination(isPresented: $isShowingCustomRegionSheet) {
+                RegionCustomForm(
+                    regionProvider: regionProvider,
+                    editingRegion: $editingRegion
+                )
+            }
+
+            // Lifecycle-related modifiers
+            .onAppear(perform: setCurrentRegionIfPresent)
+            .onChange(of: regionProvider.currentRegion) { [regionProvider] _ in
+                // When the user selects to automatically select a region, update
+                // selectedRegion with the new current region.
+                if regionProvider.automaticallySelectRegion {
+                    self.selectedRegion = regionProvider.currentRegion
                 }
             }
-            .disabled(regionProvider.automaticallySelectRegion)
-            .pickerStyle(.inline)
-            .labelsHidden()         // Hide picker header (title)
-        }
-        // List modifiers
-        .listSectionSeparator(.hidden)
-        .listStyle(.plain)
-        .refreshable(action: doRefreshRegions)
-        .disabled(disableInteractions)
 
-        // Lifecycle-related modifiers
-        .onAppear(perform: setCurrentRegionIfPresent)
-        .onChange(of: regionProvider.currentRegion) { [regionProvider] _ in
-            // When the user selects to automatically select a region, update
-            // selectedRegion with the new current region.
-            if regionProvider.automaticallySelectRegion {
-                self.selectedRegion = regionProvider.currentRegion
-            }
-        }
-
-        // Presentation-related modifiers
-        .errorAlert(error: $taskError)
-        .background {
-            // TODO: I hate this. iOS 16 has NavigationStack, so use it when we drop iOS 15.
-            NavigationLink(destination: RegionCustomForm(regionProvider: regionProvider, editingRegion: $editingRegion), isActive: $isShowingCustomRegionSheet) {
-                EmptyView()
-            }
-            .accessibilityHidden(true)
-        }
-
-        // Supplementary views
-        .safeAreaInset(edge: .top) {
-            OnboardingHeaderView(imageSystemName: "globe", headerText: OBALoc("region_picker.title", value: "Choose Region", comment: "Title of the Region Picker Item, which lets the user choose a new region from the map."))
-        }
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 14) {
-                RegionPickerMap(mapRect: Binding(get: {
-                    selectedRegion?.serviceRect
-                }, set: { _ in }), mapHeight: 200)
-                    .zIndex(-1) // Make the Map moving transition occur below the [Continue] button.
-
-                TaskButton(action: doSetCurrentRegion) {
-                    Text(Strings.continue)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 32)
-                }
-                .disabled(selectedRegion == nil || disableInteractions)
-                .buttonStyle(.borderedProminent)
-
-                regionOptions
-            }
+            // Presentation-related modifiers
+            .errorAlert(error: $taskError)
             .background(.background)
-        }
 
-        // Global
-        .interactiveDismissDisabled(selectedRegion == nil || disableInteractions)
-        .navigationBarHidden(true)
-        .padding()
+            // Supplementary views
+            .safeAreaInset(edge: .top) {
+                OnboardingHeaderView(
+                    imageSystemName: "globe",
+                    headerText: OBALoc(
+                        "region_picker.title", value: "Choose Region",
+                        comment:
+                            "Title of the Region Picker Item, which lets the user choose a new region from the map."
+                    ))
+            }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 14) {
+                    RegionPickerMap(
+                        mapRect: Binding(
+                            get: {
+                                selectedRegion?.serviceRect
+                            }, set: { _ in }), mapHeight: 200
+                    )
+                    .zIndex(-1)  // Make the Map moving transition occur below the [Continue] button.
+
+                    TaskButton(action: doSetCurrentRegion) {
+                        Text(Strings.continue)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                    }
+                    .disabled(selectedRegion == nil || disableInteractions)
+                    .buttonStyle(.borderedProminent)
+
+                    regionOptions
+                }
+                .background(.background)
+            }
+
+            // Global
+            .interactiveDismissDisabled(
+                selectedRegion == nil || disableInteractions
+            )
+            .navigationBarHidden(true)
+            .padding()
+        }
     }
 
     @ViewBuilder
@@ -155,9 +170,16 @@ public struct RegionPickerView<Provider: RegionProvider>: View, OnboardingView {
 
     @ViewBuilder
     func attributes(for region: Region) -> some View {
-        let experimental = OBALoc("region_picker.experimental_region_help_text", value: "Experimental region", comment: "Help text displayed on an experimental region.")
-        let inactive = OBALoc("region_picker.inactive_region_help_text", value: "Inactive region", comment: "Help text displayed on an inactive region.")
-        let custom = OBALoc("region_picker.custom_region_help_text", value: "Custom region", comment: "Help text displayed on a custom (user-created) region.")
+        let experimental = OBALoc(
+            "region_picker.experimental_region_help_text",
+            value: "Experimental region",
+            comment: "Help text displayed on an experimental region.")
+        let inactive = OBALoc(
+            "region_picker.inactive_region_help_text", value: "Inactive region",
+            comment: "Help text displayed on an inactive region.")
+        let custom = OBALoc(
+            "region_picker.custom_region_help_text", value: "Custom region",
+            comment: "Help text displayed on a custom (user-created) region.")
 
         if region.isExperimental {
             Image(systemName: experimentalRegionSystemImageName)
@@ -185,16 +207,34 @@ public struct RegionPickerView<Provider: RegionProvider>: View, OnboardingView {
                 editingRegion = nil
                 isShowingCustomRegionSheet = true
             } label: {
-                Label(OBALoc("region_picker.new_custom_region_button", value: "New Custom Region", comment: "Title of a button that shows a region creation view controller."), systemImage: "doc.badge.plus")
+                Label(
+                    OBALoc(
+                        "region_picker.new_custom_region_button",
+                        value: "New Custom Region",
+                        comment:
+                            "Title of a button that shows a region creation view controller."
+                    ), systemImage: "doc.badge.plus")
             }
 
             Section {
                 Toggle(isOn: $showInactiveRegions) {
-                    Label(OBALoc("region_picker.show_inactive_regions_toggle", value: "Show Inactive", comment: "Title of a toggle that shows inactive regions."), systemImage: inactiveRegionSystemImageName)
+                    Label(
+                        OBALoc(
+                            "region_picker.show_inactive_regions_toggle",
+                            value: "Show Inactive",
+                            comment:
+                                "Title of a toggle that shows inactive regions."
+                        ), systemImage: inactiveRegionSystemImageName)
                 }
 
                 Toggle(isOn: $showExperimentalRegions) {
-                    Label(OBALoc("region_picker.show_experimental_regions_toggle", value: "Show Experimental", comment: "Title of a toggle that shows experimental (beta) regions."), systemImage: experimentalRegionSystemImageName)
+                    Label(
+                        OBALoc(
+                            "region_picker.show_experimental_regions_toggle",
+                            value: "Show Experimental",
+                            comment:
+                                "Title of a toggle that shows experimental (beta) regions."
+                        ), systemImage: experimentalRegionSystemImageName)
                 }
             }
         } label: {
@@ -204,7 +244,8 @@ public struct RegionPickerView<Provider: RegionProvider>: View, OnboardingView {
     }
 
     func setCurrentRegionIfPresent() {
-        if let currentRegion = regionProvider.currentRegion, currentRegion != self.selectedRegion {
+        if let currentRegion = regionProvider.currentRegion,
+           currentRegion != self.selectedRegion {
             self.selectedRegion = currentRegion
         }
     }
@@ -256,7 +297,8 @@ struct RegionPickerView_Previews: PreviewProvider {
         Text("Hello, World!")
             .sheet(isPresented: .constant(true)) {
                 NavigationView {
-                    RegionPickerView(regionProvider: Previews_SampleRegionProvider())
+                    RegionPickerView(
+                        regionProvider: Previews_SampleRegionProvider())
                 }
             }
             .previewDisplayName("As a sheet")
